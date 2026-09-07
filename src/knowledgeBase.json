@@ -1,0 +1,363 @@
+{
+  "facts_schema": {
+    "description": "Facts introduse de utilizator.",
+    "fields": {
+      "varsta": { "type": "integer", "unit": "ani", "min": 10, "max": 100 },
+      "greutate": { "type": "float", "unit": "kg", "min": 20, "max": 300 },
+      "inaltime": { "type": "float", "unit": "cm", "min": 100, "max": 250 },
+      "sex": { "type": "enum", "values": ["masculin", "feminin"] },
+      "activitate_fizica": {
+        "type": "enum",
+        "values": ["sedentara", "usoara", "moderata", "activa", "foarte_activa"],
+        "descriptions": {
+          "sedentara": "Munca de birou, fara sport",
+          "usoara": "Sport usor 1-3 zile/saptamana",
+          "moderata": "Sport moderat 3-5 zile/saptamana",
+          "activa": "Sport intens 6-7 zile/saptamana",
+          "foarte_activa": "Munca fizica grea sau antrenamente de 2 ori/zi"
+        }
+      },
+      "obiectiv": {
+        "type": "enum",
+        "values": ["slabire", "mentinere", "crestere_in_greutate"],
+        "descriptions": {
+          "slabire": "Utilizatorul doreste sa piarda in greutate",
+          "mentinere": "Utilizatorul doreste sa isi mentina greutatea actuala",
+          "crestere_in_greutate": "Utilizatorul doreste sa ia in greutate (masa musculara)"
+        }
+      }
+    }
+  },
+
+  "intermediate_facts": {
+    "description": "Fapte derivate de masina de inferenta din faptele initiale. Nu sunt introduse de utilizator.",
+    "bmi": {
+      "formula": "greutate / (inaltime_m * inaltime_m)",
+      "categorii": {
+        "subponderal": { "range": [0, 18.5], "label": "Subponderal" },
+        "normal": { "range": [18.5, 24.9], "label": "Greutate normala" },
+        "supraponderal": { "range": [25.0, 29.9], "label": "Supraponderal" },
+        "obez": { "range": [30.0, 999], "label": "Obez" }
+      }
+    },
+    "bmr": {
+      "description": "Rata metabolica bazala (calorii necesare in repaus complet)",
+      "formula_masculin": "10 * greutate + 6.25 * inaltime - 5 * varsta + 5",
+      "formula_feminin": "10 * greutate + 6.25 * inaltime - 5 * varsta - 161"
+    },
+    "tdee": {
+      "description": "Total Daily Energy Expenditure - calorii necesare pe zi in functie de activitate",
+      "formula": "bmr * factor_activitate",
+      "factori_activitate": {
+        "sedentara": 1.2,
+        "usoara": 1.375,
+        "moderata": 1.55,
+        "activa": 1.725,
+        "foarte_activa": 1.9
+      }
+    }
+  },
+
+  "rules": [
+    {
+      "id": "R001",
+      "name": "Clasificare BMI - Subponderal",
+      "priority": 1,
+      "if": {
+        "conditions": [
+          { "fact": "bmi", "operator": "<", "value": 18.5 }
+        ]
+      },
+      "then": {
+        "set_fact": "categorie_bmi",
+        "value": "subponderal"
+      }
+    },
+    {
+      "id": "R002",
+      "name": "Clasificare BMI - Normal",
+      "priority": 1,
+      "if": {
+        "conditions": [
+          { "fact": "bmi", "operator": ">=", "value": 18.5 },
+          { "fact": "bmi", "operator": "<=", "value": 24.9 }
+        ]
+      },
+      "then": {
+        "set_fact": "categorie_bmi",
+        "value": "normal"
+      }
+    },
+    {
+      "id": "R003",
+      "name": "Clasificare BMI - Supraponderal",
+      "priority": 1,
+      "if": {
+        "conditions": [
+          { "fact": "bmi", "operator": ">", "value": 24.9 },
+          { "fact": "bmi", "operator": "<", "value": 30.0 }
+        ]
+      },
+      "then": {
+        "set_fact": "categorie_bmi",
+        "value": "supraponderal"
+      }
+    },
+    {
+      "id": "R004",
+      "name": "Clasificare BMI - Obez",
+      "priority": 1,
+      "if": {
+        "conditions": [
+          { "fact": "bmi", "operator": ">=", "value": 30.0 }
+        ]
+      },
+      "then": {
+        "set_fact": "categorie_bmi",
+        "value": "obez"
+      }
+    },
+
+    {
+      "id": "R010",
+      "name": "Calorii tinta - Slabire",
+      "priority": 2,
+      "if": {
+        "conditions": [
+          { "fact": "obiectiv", "operator": "==", "value": "slabire" }
+        ]
+      },
+      "then": {
+        "set_fact": "calorii_tinta",
+        "formula": "tdee - 500",
+        "note": "Deficit caloric de 500 kcal/zi => ~0.5 kg pierdut pe saptamana"
+      }
+    },
+    {
+      "id": "R011",
+      "name": "Calorii tinta - Mentinere",
+      "priority": 2,
+      "if": {
+        "conditions": [
+          { "fact": "obiectiv", "operator": "==", "value": "mentinere" }
+        ]
+      },
+      "then": {
+        "set_fact": "calorii_tinta",
+        "formula": "tdee",
+        "note": "Egal cu TDEE pentru mentinerea greutatii actuale"
+      }
+    },
+    {
+      "id": "R012",
+      "name": "Calorii tinta - Crestere in greutate",
+      "priority": 2,
+      "if": {
+        "conditions": [
+          { "fact": "obiectiv", "operator": "==", "value": "crestere_in_greutate" }
+        ]
+      },
+      "then": {
+        "set_fact": "calorii_tinta",
+        "formula": "tdee + 300",
+        "note": "Surplus caloric de 300 kcal/zi pentru crestere musculara lenta si sanatoasa"
+      }
+    },
+
+    {
+      "id": "R020",
+      "name": "Avertisment - Slabire cu BMI subponderal",
+      "priority": 3,
+      "if": {
+        "conditions": [
+          { "fact": "obiectiv", "operator": "==", "value": "slabire" },
+          { "fact": "categorie_bmi", "operator": "==", "value": "subponderal" }
+        ]
+      },
+      "then": {
+        "set_fact": "avertisment",
+        "value": "ATENTIE: Indicele tau de masa corporala indica subponderalitate. Nu este recomandat sa urmezi un regim de slabit. Consulta un medic sau nutritionist.",
+        "override_calorii": "tdee + 200"
+      }
+    },
+    {
+      "id": "R021",
+      "name": "Avertisment - Crestere in greutate cu BMI obez",
+      "priority": 3,
+      "if": {
+        "conditions": [
+          { "fact": "obiectiv", "operator": "==", "value": "crestere_in_greutate" },
+          { "fact": "categorie_bmi", "operator": "==", "value": "obez" }
+        ]
+      },
+      "then": {
+        "set_fact": "avertisment",
+        "value": "ATENTIE: BMI-ul tau indica obezitate. Cresterea in greutate suplimentara nu este recomandata fara avizul unui medic.",
+        "override_calorii": "tdee"
+      }
+    },
+
+    {
+      "id": "R030",
+      "name": "Macronutrienti - Slabire",
+      "priority": 4,
+      "if": {
+        "conditions": [
+          { "fact": "obiectiv", "operator": "==", "value": "slabire" }
+        ]
+      },
+      "then": {
+        "set_fact": "distributie_macronutrienti",
+        "value": {
+          "proteine_procent": 35,
+          "carbohidrati_procent": 35,
+          "grasimi_procent": 30,
+          "note": "Proteine crescute pentru a reduce pierderea de masa musculara in timpul deficitului caloric"
+        }
+      }
+    },
+    {
+      "id": "R031",
+      "name": "Macronutrienti - Mentinere",
+      "priority": 4,
+      "if": {
+        "conditions": [
+          { "fact": "obiectiv", "operator": "==", "value": "mentinere" }
+        ]
+      },
+      "then": {
+        "set_fact": "distributie_macronutrienti",
+        "value": {
+          "proteine_procent": 25,
+          "carbohidrati_procent": 45,
+          "grasimi_procent": 30,
+          "note": "Distributie echilibrata pentru o dieta sanatoasa de intretinere"
+        }
+      }
+    },
+    {
+      "id": "R032",
+      "name": "Macronutrienti - Crestere in greutate",
+      "priority": 4,
+      "if": {
+        "conditions": [
+          { "fact": "obiectiv", "operator": "==", "value": "crestere_in_greutate" }
+        ]
+      },
+      "then": {
+        "set_fact": "distributie_macronutrienti",
+        "value": {
+          "proteine_procent": 30,
+          "carbohidrati_procent": 50,
+          "grasimi_procent": 20,
+          "note": "Carbohidrati crescuti ca sursa de energie pentru antrenamente si refacere musculara"
+        }
+      }
+    },
+
+    {
+      "id": "R040",
+      "name": "Ajustare calorii - Varsta peste 60 ani",
+      "priority": 5,
+      "if": {
+        "conditions": [
+          { "fact": "varsta", "operator": ">=", "value": 60 }
+        ]
+      },
+      "then": {
+        "set_fact": "ajustare_varsta",
+        "formula": "calorii_tinta - 100",
+        "note": "Persoanele peste 60 de ani au un metabolism mai lent. Se scad 100 kcal preventiv."
+      }
+    },
+    {
+      "id": "R041",
+      "name": "Ajustare calorii - Varsta sub 18 ani",
+      "priority": 5,
+      "if": {
+        "conditions": [
+          { "fact": "varsta", "operator": "<", "value": 18 }
+        ]
+      },
+      "then": {
+        "set_fact": "ajustare_varsta",
+        "formula": "calorii_tinta + 150",
+        "note": "Adolescentii au nevoi calorice mai mari datorita cresterii active. Se adauga 150 kcal."
+      }
+    },
+
+    {
+      "id": "R050",
+      "name": "Recomandare hidratare",
+      "priority": 6,
+      "if": {
+        "conditions": [
+          { "fact": "greutate", "operator": ">", "value": 0 }
+        ]
+      },
+      "then": {
+        "set_fact": "apa_recomandata_litri",
+        "formula": "greutate * 0.033",
+        "note": "Regula generala: 33 ml apa per kg corp pe zi"
+      }
+    },
+    {
+      "id": "R051",
+      "name": "Ajustare hidratare - Activitate intensa",
+      "priority": 7,
+      "if": {
+        "conditions": [
+          { "fact": "activitate_fizica", "operator": "in", "value": ["activa", "foarte_activa"] }
+        ]
+      },
+      "then": {
+        "set_fact": "apa_recomandata_litri",
+        "formula": "apa_recomandata_litri + 0.5",
+        "note": "Se adauga 0.5 L pentru compensarea pierderilor prin transpiratie"
+      }
+    },
+
+    {
+      "id": "R060",
+      "name": "Recomandare mese pe zi - Activitate sedentara sau usoara",
+      "priority": 6,
+      "if": {
+        "conditions": [
+          { "fact": "activitate_fizica", "operator": "in", "value": ["sedentara", "usoara"] }
+        ]
+      },
+      "then": {
+        "set_fact": "numar_mese_recomandat",
+        "value": 3,
+        "note": "3 mese principale pe zi, fara gustari suplimentare"
+      }
+    },
+    {
+      "id": "R061",
+      "name": "Recomandare mese pe zi - Activitate moderata, activa sau foarte activa",
+      "priority": 6,
+      "if": {
+        "conditions": [
+          { "fact": "activitate_fizica", "operator": "in", "value": ["moderata", "activa", "foarte_activa"] }
+        ]
+      },
+      "then": {
+        "set_fact": "numar_mese_recomandat",
+        "value": 5,
+        "note": "3 mese principale + 2 gustari pentru sustinerea energiei pe durata antrenamentelor"
+      }
+    }
+  ],
+
+  "conclusions": {
+    "description": "La finalul lantului de inferenta, sistemul construieste concluzia finala pe baza faptelor derivate.",
+    "output_fields": [
+      "calorii_tinta",
+      "distributie_macronutrienti",
+      "apa_recomandata_litri",
+      "numar_mese_recomandat",
+      "categorie_bmi",
+      "avertisment"
+    ]
+  }
+}
